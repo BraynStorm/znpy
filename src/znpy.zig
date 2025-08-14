@@ -183,6 +183,40 @@ inline fn check(callable: anytype, args: anytype) bool {
     };
 }
 
+fn pyParseValue(comptime T: type, py_value: ?*c.PyObject) ?T {
+    switch (@typeInfo(T)) {
+        .int => |int_t| {
+            std.debug.assert(check(c.PyNumber_Check, .{py_value}));
+            const number = if (int_t.signedness == .signed)
+                c.PyLong_AsLongLong(py_value)
+            else
+                c.PyLong_AsUnsignedLongLong(py_value);
+            return @intCast(number);
+        },
+        .float => {
+            std.debug.assert(check(c.PyNumber_Check, .{py_value}));
+            const number = c.PyFloat_AsDouble(py_value);
+            return @floatCast(number);
+        },
+        .@"struct" => {
+            if (T == numpy.array) {
+                if (std.meta.eql(
+                    @as(usize, @intFromPtr(@as([*c]?*c.PyTypeObject, @ptrCast(c.PyArray_API))[2])),
+                    @as(usize, @intFromPtr(py_value.?.ob_type)),
+                )) {
+                    return numpy.array{ .ndarray = @as(*c.PyArrayObject, @ptrCast(py_value)) };
+                } else {
+                    @panic("non-ndarray input!");
+                }
+            }
+            @compileError("unsup");
+        },
+        else => {
+            return null;
+        },
+    }
+}
+
 const methods: []const c.PyMethodDef = blk: {
     var defs: []const c.PyMethodDef = &[0]c.PyMethodDef{};
 
@@ -192,6 +226,10 @@ const methods: []const c.PyMethodDef = blk: {
         const func = @typeInfo(root_decl).@"fn";
         if (func.is_generic) continue;
         if (func.is_var_args) continue;
+        if (func.params.len > 1) @compileError("python-accessible functions take exactly 1 struct as an argument");
+        if (func.params[0].type.? == numpy.array) @compileError("python-accessible functions take exactly 1 struct as an argument");
+        if (@typeInfo(func.params[0].type.?) != .@"struct") @compileError("python-accessible functions take exactly 1 struct as an argument");
+        const ArgsStruct = func.params[0].type.?;
 
         //- bs: produce a PyMethodDef for the given function
 
@@ -203,71 +241,52 @@ const methods: []const c.PyMethodDef = blk: {
                 kwargs: ?*c.PyObject,
             ) callconv(.c) ?*c.PyObject {
                 _ = self; // autofix
-                _ = kwargs; // autofix
                 const Func = @field(root, root_decl_name.name);
 
-                const ArgsTuple = std.meta.ArgsTuple(root_decl);
-                var args_tuple: ArgsTuple = undefined;
+                var args_struct: ArgsStruct = undefined;
 
                 //- bs: check for positional arguments
                 const tuple = @as(*c.PyTupleObject, @ptrCast(args.?));
                 const tuple_size: usize = @intCast(c.PyTuple_Size(args));
                 const tuple_items = @as([*][*c]c.PyObject, &tuple.ob_item)[0..tuple_size];
-                inline for (func.params, &args_tuple, 0..) |p, *t, i| {
-                    std.debug.assert(p.type != null);
-
-                    //- bs: stop parsing, there may be kwargs, though!
-                    if (i >= tuple_items.len) break;
-
-                    const py_arg: ?*c.PyObject = tuple_items[i];
-                    switch (@typeInfo(@TypeOf(t.*))) {
-                        .int => {
-                            std.debug.assert(check(c.PyLong_Check, .{py_arg}));
-                            const number = c.PyLong_AsUnsignedLong(py_arg);
-                            t.* = @intCast(number);
-                        },
-                        .float => {
-                            std.debug.assert(check(c.PyFloat_Check, .{py_arg}));
-                            const number = c.PyFloat_AsDouble(py_arg);
-                            t.* = @floatCast(number);
-                        },
-                        .@"struct" => {
-                            if (@TypeOf(t.*) == numpy.array) {
-                                if (std.meta.eql(
-                                    @as(usize, @intFromPtr(@as([*c]?*c.PyTypeObject, @ptrCast(c.PyArray_API))[2])),
-                                    @as(usize, @intFromPtr(py_arg.?.ob_type)),
-                                )) {
-                                    t.* = numpy.array{ .ndarray = @as(*c.PyArrayObject, @ptrCast(py_arg)) };
-                                } else {
-                                    @panic("non-ndarray input!");
-                                }
-                            } else {
-                                @compileError("unknown struct");
-                            }
-                        },
-                        else => {
-                            @compileLog("unknown type of argument:");
-                            @compileLog(root_decl_name.name, i, t.*);
-                        },
-                    }
-                }
-
-                //- bs: kwargs!
-                inline for (func.params, &args_tuple, 0..) |p, *t, i| {
-                    _ = p; // autofix
-                    _ = t; // autofix
-                    if (i > tuple_size) {
-                        //- bs: check if it's in kwargs
-
-                        // c.PyDict_GetItem(kwargs, )
-
-                        //
+                inline for (std.meta.fields(ArgsStruct), 0..) |field_, i| {
+                    const field: std.builtin.Type.StructField = field_;
+                    if (i < tuple_items.len) {
+                        //- bs: args
+                        @branchHint(.likely);
+                        @field(args_struct, field.name) = pyParseValue(field.type, tuple_items[i]) orelse {
+                            @panic("unsupported parameter" ++ root_decl_name.name ++ "," ++ field.name);
+                        };
                     } else {
-                        //
+                        @branchHint(.unlikely);
+                        //- bs: kwargs + default
+                        const py_key = c.PyUnicode_FromStringAndSize(field.name.ptr, field.name.len);
+                        defer c.Py_DECREF(py_key);
+                        if (c.PyDict_GetItemWithError(kwargs, py_key)) |py_value| {
+                            //- bs: we got the value, assign it to the struct
+                            // defer c.Py_DECREF(py_value);
+
+                            @field(args_struct, field.name) = pyParseValue(field.type, py_value) orelse
+                                if (field.defaultValue()) |default|
+                                    //- bs: set to the default
+                                    default
+                                else {
+                                    //- bs: no default value, raise an exception. TODO: stacktrace
+                                    c.PyErr_SetString(c.PyExc_TypeError, "argument count/name mismatch");
+                                    return null;
+                                };
+                        } else if (field.defaultValue()) |default| {
+                            @field(args_struct, field.name) = default;
+                        } else {
+                            //- bs: no default value, raise an exception. TODO: stacktrace
+                            c.PyErr_SetString(c.PyExc_TypeError, "argument count/name mismatch");
+                            return null;
+                        }
                     }
                 }
+
                 if (func.return_type) |rt| {
-                    const maybe_error_result: rt = @call(.auto, Func, args_tuple);
+                    const maybe_error_result: rt = @call(.auto, Func, .{args_struct});
                     const result_t = switch (@typeInfo(rt)) {
                         .error_union => |e| e.payload,
                         else => rt,
@@ -312,7 +331,7 @@ const methods: []const c.PyMethodDef = blk: {
                     };
                 } else {
                     //- bs: if it returns nothing, return None.
-                    @call(.auto, Func, args_tuple);
+                    @call(.auto, Func, args_struct);
                     return c.Py_None();
                 }
 

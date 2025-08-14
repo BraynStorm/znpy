@@ -5,6 +5,7 @@ fn createTests(
     znpy: *std.Build.Module,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
+    strip: bool,
 ) *std.Build.Step.Run {
     const unittest_pyd = b.addSharedLibrary(.{
         .name = "znpy_test",
@@ -12,6 +13,7 @@ fn createTests(
         .optimize = optimize,
         .target = target,
         .single_threaded = true,
+        .strip = strip,
     });
     unittest_pyd.root_module.addImport("znpy", znpy);
 
@@ -74,6 +76,7 @@ pub fn build(
 ) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const strip = b.option(bool, "strip", "strip binary") orelse false;
 
     const znpy = b.addModule("znpy", .{
         .root_source_file = b.path("src/znpy.zig"),
@@ -90,8 +93,7 @@ pub fn build(
         znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/include/python3.13" }); // TODO: allow specifying as a build option.
         znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/lib/python3.13/site-packages/numpy/_core/include" }); // TODO: allow specifying as a build option.
     }
-
-    _ = createTests(b, znpy, target, optimize);
+    _ = createTests(b, znpy, target, optimize, strip);
 
     // const run_cmd = b.addRunArtifact(lib);
     // run_cmd.step.dependOn(lib_install);

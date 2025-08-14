@@ -7,24 +7,26 @@ fn debug(comptime fmt: []const u8, args: anytype) void {
     std.debug.print(fmt ++ "\n", args);
 }
 
-pub fn magic1(
-    a: f32,
-    b: f32,
-    //
-) f32 {
-    return a + b;
-}
-pub fn magic2(
+pub noinline fn magic1(
     args: struct {
-        a: f32,
-        b: f32 = 0,
+        a: f32 = 2,
+        b: f32 = 1,
     },
 ) f32 {
-    const a, const b = args;
-    return a + b;
+    return args.a + args.b;
 }
 
-pub fn take_some_array(array: znpy.numpy.array) !f32 {
+pub noinline fn magic2(
+    args: struct {
+        a: f32,
+        b: f32 = 1,
+    },
+) f32 {
+    return args.a / args.b;
+}
+
+pub noinline fn take_some_array(kwargs: struct { array: znpy.numpy.array }) !f32 {
+    const array = kwargs.array;
     return switch (array.shape().len) {
         1 => take_some_array_f32_1d(try .init(array)),
         2 => take_some_array_f32_2d(try .init(array)),
@@ -32,14 +34,14 @@ pub fn take_some_array(array: znpy.numpy.array) !f32 {
         else => return error.MaxDimsIs3,
     };
 }
-fn take_some_array_f32_1d(arr: znpy.numpy.array.typed(f32, 1)) f32 {
+noinline fn take_some_array_f32_1d(arr: znpy.numpy.array.typed(f32, 1)) f32 {
     var sum: f32 = 0;
     for (arr.slice1d(.{})) |e|
         sum += e;
 
     return sum;
 }
-fn take_some_array_f32_2d(arr: znpy.numpy.array.typed(f32, 2)) f32 {
+noinline fn take_some_array_f32_2d(arr: znpy.numpy.array.typed(f32, 2)) f32 {
     var sum: f32 = 0;
     for (0..arr.shape()[0]) |y| {
         for (arr.slice1d(.{y})) |e| {
@@ -49,7 +51,7 @@ fn take_some_array_f32_2d(arr: znpy.numpy.array.typed(f32, 2)) f32 {
 
     return sum;
 }
-fn take_some_array_f32_3d(arr: znpy.numpy.array.typed(f32, 3)) f32 {
+noinline fn take_some_array_f32_3d(arr: znpy.numpy.array.typed(f32, 3)) f32 {
     const N = std.simd.suggestVectorLength(f32) orelse 4;
     const V = @Vector(N, f32);
     var sum_v: V = @splat(0);
