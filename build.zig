@@ -11,6 +11,7 @@ fn createTests(
         .root_source_file = b.path("tests/test_1.zig"),
         .optimize = optimize,
         .target = target,
+        .single_threaded = true,
     });
     unittest_pyd.root_module.addImport("znpy", znpy);
 
@@ -42,6 +43,7 @@ fn createTests(
         .root_source_file = b.path("tests/znpy_tests.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = true,
     });
     const unittest_step = b.addRunArtifact(unittest_test);
     unittest_step.step.dependOn(&install_test_pyd.step); // require the PYD to be installed
@@ -73,7 +75,12 @@ pub fn build(
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const znpy = b.addModule("znpy", .{ .root_source_file = b.path("src/znpy.zig"), .link_libc = true, .target = target, .optimize = optimize });
+    const znpy = b.addModule("znpy", .{
+        .root_source_file = b.path("src/znpy.zig"),
+        .link_libc = true,
+        .target = target,
+        .optimize = optimize,
+    });
     if (target.result.os.tag == .windows) {
         znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "py", "-3.7", "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }) });
         znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "import numpy as np; print(np.get_include())" }) });

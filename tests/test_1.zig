@@ -14,25 +14,57 @@ pub fn magic1(
 ) f32 {
     return a + b;
 }
+pub fn magic2(
+    args: struct {
+        a: f32,
+        b: f32 = 0,
+    },
+) f32 {
+    const a, const b = args;
+    return a + b;
+}
 
-pub fn take_some_array(
-    array: znpy.numpy.array,
-) u64 {
-    const typed = array.withTypeAndDims(f32, 2);
+pub fn take_some_array(array: znpy.numpy.array) !f32 {
+    return switch (array.shape().len) {
+        1 => take_some_array_f32_1d(try .init(array)),
+        2 => take_some_array_f32_2d(try .init(array)),
+        3 => take_some_array_f32_3d(try .init(array)),
+        else => return error.MaxDimsIs3,
+    };
+}
+fn take_some_array_f32_1d(arr: znpy.numpy.array.typed(f32, 1)) f32 {
+    var sum: f32 = 0;
+    for (arr.slice1d(.{})) |e|
+        sum += e;
 
-    if (false) {
-        _ = typed; // autofix
-        const n_dims = array.ndarray.nd;
-        std.debug.assert(n_dims == 2);
+    return sum;
+}
+fn take_some_array_f32_2d(arr: znpy.numpy.array.typed(f32, 2)) f32 {
+    var sum: f32 = 0;
+    for (0..arr.shape()[0]) |y| {
+        for (arr.slice1d(.{y})) |e| {
+            sum += e;
+        }
+    }
 
-        const stride_0 = array.ndarray.strides[0];
-        const stride_1 = array.ndarray.strides[1];
-        debug("{}", .{ .strides = .{ stride_0, stride_1 } });
+    return sum;
+}
+fn take_some_array_f32_3d(arr: znpy.numpy.array.typed(f32, 3)) f32 {
+    const N = std.simd.suggestVectorLength(f32) orelse 4;
+    const V = @Vector(N, f32);
+    var sum_v: V = @splat(0);
+    for (0..arr.shape()[0]) |z| {
+        for (0..arr.shape()[1]) |y| {
+            const elements = arr.slice1d(.{ z, y });
+            const n_vectors = @divFloor(elements.len, @sizeOf(V));
+            const vectorized_length = n_vectors * @sizeOf(V);
+            const vectors: []align(1) const V = std.mem.bytesAsSlice(V, elements[0..vectorized_length]);
+            for (vectors) |v| sum_v += v;
+            for (elements[vectorized_length..]) |s| sum_v[0] += s;
+        }
+    }
 
-        const f32_data = @as(*f32, @ptrCast(@alignCast(array.ndarray.data)));
-
-        return @intFromFloat(f32_data.*);
-    } else {}
+    return @reduce(.Add, sum_v);
 }
 comptime {
     _ = znpy;
