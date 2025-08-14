@@ -24,11 +24,19 @@ fn createTests(
         unittest_pyd,
         .{ .dest_dir = .{ .override = tests_install_dir } },
     );
-    install_test_pyd.dest_sub_path = std.fmt.allocPrint(
-        b.allocator,
-        "{s}.so",
-        .{unittest_pyd.name},
-    ) catch unreachable;
+    if (target.result.os.tag == .windows) {
+        install_test_pyd.dest_sub_path = std.fmt.allocPrint(
+            b.allocator,
+            "{s}.pyd",
+            .{unittest_pyd.name},
+        ) catch unreachable;
+    } else {
+        install_test_pyd.dest_sub_path = std.fmt.allocPrint(
+            b.allocator,
+            "{s}.so",
+            .{unittest_pyd.name},
+        ) catch unreachable;
+    }
 
     const unittest_test = b.addTest(.{
         .root_source_file = b.path("tests/znpy_tests.zig"),
@@ -51,16 +59,30 @@ fn createTests(
     return unittest_step;
 }
 
-pub fn build(b: *std.Build) void {
+fn readCommandOutput(b: *std.Build, command: []const []const u8) ![]const u8 {
+    const child = try std.process.Child.run(.{
+        .allocator = b.allocator,
+        .argv = command,
+    });
+    // NOTE(bozho2): leak stdout/stderr buffers.
+    return std.mem.trimRight(u8, child.stdout, "\n\r\t ");
+}
+pub fn build(
+    b: *std.Build,
+) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const znpy = b.addModule("znpy", .{
-        .root_source_file = b.path("src/znpy.zig"),
-        .link_libc = true,
-    });
-    znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/include/python3.13" }); // TODO: allow specifying as a build option.
-    znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/lib/python3.13/site-packages/numpy/_core/include" }); // TODO: allow specifying as a build option.
+    const znpy = b.addModule("znpy", .{ .root_source_file = b.path("src/znpy.zig"), .link_libc = true, .target = target, .optimize = optimize });
+    if (target.result.os.tag == .windows) {
+        znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "py", "-3.7", "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }) });
+        znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "import numpy as np; print(np.get_include())" }) });
+        znpy.addLibraryPath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "py", "-3.7", "-c", "from sysconfig import get_paths; print(get_paths()['data'] + '/libs')" }) });
+        znpy.linkSystemLibrary("python37", .{});
+    } else {
+        znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/include/python3.13" }); // TODO: allow specifying as a build option.
+        znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/lib/python3.13/site-packages/numpy/_core/include" }); // TODO: allow specifying as a build option.
+    }
 
     _ = createTests(b, znpy, target, optimize);
 
