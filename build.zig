@@ -95,6 +95,19 @@ pub fn build(
     }
     _ = createTests(b, znpy, target, optimize, strip);
 
+    const view_asm = b.addExecutable(.{
+        .name = "view_asm",
+        .root_source_file = b.path("src/view_asm.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const install_view_asm = b.addInstallArtifact(view_asm, .{});
+    // b.getInstallStep().dependOn(&install_view_asm.step);
+    const run_view_asm = b.addRunArtifact(view_asm);
+    const run_view_asm_cmd = b.step("view-asm", "");
+    run_view_asm_cmd.dependOn(&install_view_asm.step);
+    if (b.args) |args| run_view_asm.addArgs(args);
+
     // const run_cmd = b.addRunArtifact(lib);
     // run_cmd.step.dependOn(lib_install);
     // const run_step = b.step("run", "Run the app");
