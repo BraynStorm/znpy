@@ -1,4 +1,5 @@
 const std = @import("std");
+const options = @import("znpy_options");
 
 /// CPython!
 pub const c = @cImport({
@@ -261,7 +262,7 @@ const methods: []const c.PyMethodDef = blk: {
                         @branchHint(.unlikely);
                         //- bs: kwargs + default
                         const py_key = c.PyUnicode_FromStringAndSize(field.name.ptr, field.name.len);
-                        defer c.Py_DECREF(py_key);
+                        defer c.Py_DecRef(py_key);
                         if (c.PyDict_GetItemWithError(kwargs, py_key)) |py_value| {
                             //- bs: we got the value, assign it to the struct
                             // defer c.Py_DECREF(py_value);
@@ -353,22 +354,48 @@ const methods: []const c.PyMethodDef = blk: {
 };
 var module_def_spec = makeModuleDef();
 
-fn makeModuleDef() c.PyModuleDef {
-    return c.PyModuleDef{
-        .m_base = .{
+// reimplemented in Zig because translate-c doesn't handle it well.
+const PyModuleDef_HEAD_INIT: c.PyModuleDef_Base = blk: {
+    std.debug.assert(options.python_version.major == 3);
+    if (options.python_version.minor == 11 or
+        options.python_version.minor == 10 or
+        options.python_version.minor == 9 or
+        options.python_version.minor == 8 or
+        options.python_version.minor == 7)
+    {
+        break :blk .{
             .ob_base = .{
-                // ---- for py 3.13
-                .unnamed_0 = .{
-                    .ob_refcnt = @as(c.Py_ssize_t, std.math.maxInt(u32) >> 2),
-                },
-                // ----- for py 3.7
-                // .ob_refcnt = 1,
-                // .ob_type = null,
+                .ob_refcnt = 1,
+                .ob_type = null,
             },
             .m_init = null,
             .m_index = 0,
             .m_copy = null,
-        },
+        };
+    }
+    if (options.python_version.minor == 14) {
+        @compileLog(std.meta.fields(c.union_unnamed_9));
+    }
+    if (options.python_version.minor == 14 or
+        options.python_version.minor == 13 or
+        options.python_version.minor == 12)
+    {
+        break :blk .{
+            .ob_base = .{
+                .unnamed_0 = .{
+                    .ob_refcnt = @as(c.Py_ssize_t, std.math.maxInt(u32) >> 2),
+                },
+            },
+            .m_init = null,
+            .m_index = 0,
+            .m_copy = null,
+        };
+    }
+};
+
+fn makeModuleDef() c.PyModuleDef {
+    return c.PyModuleDef{
+        .m_base = PyModuleDef_HEAD_INIT,
         .m_name = root.python_module.name,
         .m_doc = root.python_module.doc,
         .m_size = -1, //- bs: disable sub-interpreters
@@ -377,6 +404,11 @@ fn makeModuleDef() c.PyModuleDef {
 }
 
 fn znpy_PyInit() callconv(.c) [*c]c.PyObject {
+    std.io.getStdOut().writer().print("ZNPY for Python {d}.{d}\n", .{
+        options.python_version.major,
+        options.python_version.minor,
+            // options.python_version.patch,
+    }) catch unreachable;
     const module = c.PyModule_Create(&module_def_spec);
     _ = c._import_array();
     return module;

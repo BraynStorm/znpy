@@ -41,14 +41,44 @@ fn createTests(
         ) catch unreachable;
     }
 
+    // emit raw ASM
+    b.getInstallStep().dependOn(&b.addInstallFile(
+        unittest_pyd.getEmittedAsm(),
+        std.fmt.allocPrint(b.allocator, "{s}-{s}-raw.s", .{
+            unittest_pyd.name,
+            @tagName(optimize),
+        }) catch unreachable,
+    ).step);
+
+    // emit clean ASM (rust)
+    // const asm_cleaner = b.addExecutable(.{
+    //     .name = "asm_cleaner",
+    //     .root_source_file = b.path("tools/asm_cleaner.zig"),
+    //     .single_threaded = true,
+    //     .optimize = .ReleaseFast,
+    //     .strip = true,
+    //     .target = target,
+    // });
+
+    // const clean_asm_zig = b.addRunArtifact(asm_cleaner);
+    // clean_asm_zig.setStdIn(.{ .lazy_path = unittest_pyd.getEmittedAsm() });
+    // b.getInstallStep().dependOn(&b.addInstallFile(
+    //     clean_asm_zig.captureStdOut(),
+    //     std.fmt.allocPrint(b.allocator, "{s}-{s}-clean-zig.s", .{
+    //         unittest_pyd.name,
+    //         @tagName(optimize),
+    //     }) catch unreachable,
+    // ).step);
+
+    // test
     const unittest_test = b.addTest(.{
         .root_source_file = b.path("tests/znpy_tests.zig"),
         .target = target,
         .optimize = optimize,
         .single_threaded = true,
     });
-    const unittest_step = b.addRunArtifact(unittest_test);
-    unittest_step.step.dependOn(&install_test_pyd.step); // require the PYD to be installed
+    const unittest_run = b.addRunArtifact(unittest_test);
+    unittest_run.step.dependOn(&install_test_pyd.step); // require the PYD to be installed
 
     const copy_test_py = b.addInstallFileWithDir(
         b.path("tests/test_1.py"),
@@ -57,10 +87,11 @@ fn createTests(
     );
 
     const unittest_cmd = b.step("test", "Test ZNPY");
-    unittest_cmd.dependOn(&unittest_step.step);
+    unittest_cmd.dependOn(b.getInstallStep());
+    unittest_cmd.dependOn(&unittest_run.step);
     unittest_cmd.dependOn(&copy_test_py.step);
 
-    return unittest_step;
+    return unittest_run;
 }
 
 fn readCommandOutput(b: *std.Build, command: []const []const u8) ![]const u8 {
@@ -71,6 +102,26 @@ fn readCommandOutput(b: *std.Build, command: []const []const u8) ![]const u8 {
     // NOTE(bozho2): leak stdout/stderr buffers.
     return std.mem.trimRight(u8, child.stdout, "\n\r\t ");
 }
+
+const PythonVersion = struct {
+    major: u16,
+    minor: u16,
+    // patch: u16,
+};
+
+/// str = "Python 3.13.5"
+fn parsePythonVersion(str: []const u8) !PythonVersion {
+    const prefix = "Python ";
+    std.debug.print("-> {s}\n", .{str});
+    if (!(std.mem.startsWith(u8, str, prefix))) return error.PythonWTF;
+    var iter = std.mem.tokenizeScalar(u8, str[prefix.len..], '.');
+    return .{
+        .major = try std.fmt.parseInt(u8, iter.next() orelse "", 10), // empty string as default
+        .minor = try std.fmt.parseInt(u8, iter.next() orelse "", 10), // on purpose
+        // .patch = try std.fmt.parseInt(u8, iter.next() orelse "", 10), // so we can fail if it's not there
+    };
+}
+
 pub fn build(
     b: *std.Build,
 ) !void {
@@ -84,29 +135,18 @@ pub fn build(
         .target = target,
         .optimize = optimize,
     });
+    const python_version_str = try readCommandOutput(b, &[_][]const u8{ "python", "--version" });
+    const python_version = try parsePythonVersion(python_version_str);
+    const znpy_options = b.addOptions();
+    znpy_options.addOption(PythonVersion, "python_version", python_version);
+    znpy.addOptions("znpy_options", znpy_options);
+    znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }) });
+    znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "import numpy as np; print(np.get_include())" }) });
     if (target.result.os.tag == .windows) {
-        znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "py", "-3.7", "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }) });
-        znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "import numpy as np; print(np.get_include())" }) });
-        znpy.addLibraryPath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "py", "-3.7", "-c", "from sysconfig import get_paths; print(get_paths()['data'] + '/libs')" }) });
+        znpy.addLibraryPath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "from sysconfig import get_paths; print(get_paths()['data'] + '/libs')" }) });
         znpy.linkSystemLibrary("python37", .{});
-    } else {
-        znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/include/python3.13" }); // TODO: allow specifying as a build option.
-        znpy.addSystemIncludePath(.{ .cwd_relative = "/usr/lib/python3.13/site-packages/numpy/_core/include" }); // TODO: allow specifying as a build option.
-    }
+    } else {}
     _ = createTests(b, znpy, target, optimize, strip);
-
-    const view_asm = b.addExecutable(.{
-        .name = "view_asm",
-        .root_source_file = b.path("src/view_asm.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const install_view_asm = b.addInstallArtifact(view_asm, .{});
-    // b.getInstallStep().dependOn(&install_view_asm.step);
-    const run_view_asm = b.addRunArtifact(view_asm);
-    const run_view_asm_cmd = b.step("view-asm", "");
-    run_view_asm_cmd.dependOn(&install_view_asm.step);
-    if (b.args) |args| run_view_asm.addArgs(args);
 
     // const run_cmd = b.addRunArtifact(lib);
     // run_cmd.step.dependOn(lib_install);
