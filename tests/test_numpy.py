@@ -1,12 +1,10 @@
-import znpy_test
-import sys
+import znpy_test_numpy as znpy_test
 import numpy as np
 
 for x, y in znpy_test.__dict__.items():
     print(f"{x:20} {y}")
 
 print('--------------------' * 4)
-print('znpy_test.magic1:', znpy_test.magic1(20.0, 20.0))
 arr = np.ones((5), dtype=np.float32)
 print('znpy_test.take_some_array ((5); ones)      :', znpy_test.take_some_array(arr))
 arr = np.ones((5, 4), dtype=np.float32)

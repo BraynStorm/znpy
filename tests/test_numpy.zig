@@ -1,30 +1,6 @@
 const std = @import("std");
 const znpy = @import("znpy");
 
-pub const python_module = znpy.PythonModule{ .name = @import("options").znpy_module_name };
-
-fn debug(comptime fmt: []const u8, args: anytype) void {
-    std.debug.print(fmt ++ "\n", args);
-}
-
-pub fn magic1(
-    args: struct {
-        a: f32 = 2,
-        b: f32 = 1,
-    },
-) f32 {
-    return args.a + args.b;
-}
-
-pub fn magic2(
-    args: struct {
-        a: f32,
-        b: f32 = 1,
-    },
-) f32 {
-    return args.a / args.b;
-}
-
 pub fn take_some_array(kwargs: struct { array: znpy.numpy.array }) !f32 {
     const array = kwargs.array;
     return switch (array.shape().len) {
@@ -67,7 +43,4 @@ fn take_some_array_f32_3d(arr: znpy.numpy.array.typed(f32, 3)) f32 {
     }
 
     return @reduce(.Add, sum_v);
-}
-comptime {
-    _ = znpy;
 }

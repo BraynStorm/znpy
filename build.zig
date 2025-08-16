@@ -8,8 +8,8 @@ fn createTests(
     strip: bool,
 ) *std.Build.Step.Run {
     const unittest_pyd = b.addSharedLibrary(.{
-        .name = "znpy_test",
-        .root_source_file = b.path("tests/test_1.zig"),
+        .name = "znpy_test_simple",
+        .root_source_file = b.path("tests/test_simple.zig"),
         .optimize = optimize,
         .target = target,
         .single_threaded = true,
@@ -81,9 +81,9 @@ fn createTests(
     unittest_run.step.dependOn(&install_test_pyd.step); // require the PYD to be installed
 
     const copy_test_py = b.addInstallFileWithDir(
-        b.path("tests/test_1.py"),
+        b.path("tests/test_simple.py"),
         tests_install_dir,
-        "test_1.py",
+        "test_simple.py",
     );
 
     const unittest_cmd = b.step("test", "Test ZNPY");
@@ -94,11 +94,13 @@ fn createTests(
     return unittest_run;
 }
 
-fn readCommandOutput(b: *std.Build, command: []const []const u8) ![]const u8 {
-    const child = try std.process.Child.run(.{
+fn readCommandOutput(b: *std.Build, command: []const []const u8) ?[]const u8 {
+    const child = std.process.Child.run(.{
         .allocator = b.allocator,
         .argv = command,
-    });
+    }) catch @panic("failed to run command");
+    if (child.term.Exited != 0) return null;
+
     // NOTE(bozho2): leak stdout/stderr buffers.
     return std.mem.trimRight(u8, child.stdout, "\n\r\t ");
 }
@@ -135,17 +137,41 @@ pub fn build(
         .target = target,
         .optimize = optimize,
     });
-    const python_version_str = try readCommandOutput(b, &[_][]const u8{ "python", "--version" });
-    const python_version = try parsePythonVersion(python_version_str);
+
     const znpy_options = b.addOptions();
-    znpy_options.addOption(PythonVersion, "python_version", python_version);
     znpy.addOptions("znpy_options", znpy_options);
-    znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }) });
-    znpy.addSystemIncludePath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "import numpy as np; print(np.get_include())" }) });
+
+    //- bs: decide what launcher to use
+    const python_exe = if (target.result.os.tag == .windows) "py" else "python";
+
+    //- bs: find python version
+    const python_version_str = readCommandOutput(b, &[_][]const u8{ python_exe, "--version" }).?;
+    const python_version = try parsePythonVersion(python_version_str);
+    znpy_options.addOption(PythonVersion, "python_version", python_version);
+
+    //- bs: find python include path
+    const python_include_path = readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }).?;
+    znpy.addSystemIncludePath(.{ .cwd_relative = python_include_path });
+
+    //- bs: find numpy include path, if available
+    var numpy_available = false;
+    if (readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "import numpy as np; print(np.get_include())" })) |numpy_include_path| {
+        znpy.addSystemIncludePath(.{ .cwd_relative = numpy_include_path });
+        numpy_available = true;
+    }
+    znpy_options.addOption(bool, "numpy_available", numpy_available);
+
+    //- bs: link the necessary lib file on Windows
     if (target.result.os.tag == .windows) {
-        znpy.addLibraryPath(.{ .cwd_relative = try readCommandOutput(b, &[_][]const u8{ "python", "-c", "from sysconfig import get_paths; print(get_paths()['data'] + '/libs')" }) });
-        znpy.linkSystemLibrary("python37", .{});
-    } else {}
+        znpy.addLibraryPath(.{ .cwd_relative = readCommandOutput(b, &[_][]const u8{ "py", "-c", "from sysconfig import get_paths; print(get_paths()['data'] + '/libs')" }).? });
+        const python_library = try std.fmt.allocPrint(b.allocator, "python{d}{d}", .{
+            python_version.major,
+            python_version.minor,
+        });
+        znpy.linkSystemLibrary(python_library, .{});
+    }
+
+    //- bs: add some tests
     _ = createTests(b, znpy, target, optimize, strip);
 
     // const run_cmd = b.addRunArtifact(lib);
