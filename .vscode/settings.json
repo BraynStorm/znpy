@@ -3,6 +3,7 @@
         "INCREF",
         "ndarray",
         "numpy",
+        "sysconfig",
         "znpy"
     ]
 }
