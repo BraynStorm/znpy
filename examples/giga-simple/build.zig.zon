@@ -6,7 +6,7 @@
     .dependencies = .{
         .znpy = .{
             .url = "../../",
-            .hash = "znpy-0.0.1-sswLYlnAAAA7r5D7IgwET0riYH9Etv7i1XUsobWCVjgZ",
+            .hash = "znpy-0.0.1-sswLYiDEAABoE9THRY_3HC91egFUqmQFQo5THhGjiD7S",
         },
     },
     .paths = .{

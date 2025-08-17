@@ -1,10 +1,55 @@
 const std = @import("std");
-pub fn newZNPY(
+
+pub fn znpyImbue(
+    b: *std.Build,
+    znpy_dep: *std.Build.Dependency,
+    shared_library: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    strip: bool,
+) !struct {
+    *std.Build.Module,
+    *std.Build.Step.InstallFile,
+} {
+    return newZNPY_impl(
+        b,
+        shared_library,
+        target,
+        optimize,
+        strip,
+        znpy_dep.path("src/znpy.zig"),
+        znpy_dep.path("src/pyi.zig"),
+    );
+}
+
+fn newZNPY(
     b: *std.Build,
     shared_library: *std.Build.Step.Compile,
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     strip: bool,
+) !struct {
+    *std.Build.Module,
+    *std.Build.Step.InstallFile,
+} {
+    return newZNPY_impl(
+        b,
+        shared_library,
+        target,
+        optimize,
+        strip,
+        b.path("src/znpy.zig"),
+        b.path("src/pyi.zig"),
+    );
+}
+fn newZNPY_impl(
+    b: *std.Build,
+    shared_library: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    strip: bool,
+    znpy_zig_path: std.Build.LazyPath,
+    pyi_zig_path: std.Build.LazyPath,
 ) !struct {
     *std.Build.Module,
     *std.Build.Step.InstallFile,
@@ -15,7 +60,7 @@ pub fn newZNPY(
     const name = try b.allocator.dupeZ(u8, shared_library.name);
 
     const znpy = b.addModule("znpy", .{
-        .root_source_file = b.path("src/znpy.zig"),
+        .root_source_file = znpy_zig_path,
         .link_libc = true,
         .target = target,
         .optimize = optimize,
@@ -28,7 +73,7 @@ pub fn newZNPY(
 
     const gen_pyi_exe = b.addExecutable(.{
         .name = b.fmt("gen-pyi-{s}", .{name}),
-        .root_source_file = b.path("src/pyi.zig"),
+        .root_source_file = pyi_zig_path,
         .link_libc = true,
         .target = target,
         .optimize = optimize,
