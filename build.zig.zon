@@ -1,6 +1,6 @@
 .{
     .name = .znpy,
-    .version = "0.0.0",
+    .version = "0.0.1",
     .fingerprint = 0x6169c9a0620bccb2,
     .minimum_zig_version = "0.14.1",
     .dependencies = .{},
@@ -8,6 +8,6 @@
         "build.zig",
         "build.zig.zon",
         "src",
-        "test",
+        "tests",
     },
 }

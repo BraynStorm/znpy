@@ -1,6 +1,10 @@
 const std = @import("std");
 const znpy = @import("znpy");
 
+comptime {
+    znpy.defineExtensionModule();
+}
+
 pub fn take_some_array(kwargs: struct { array: znpy.numpy.array }) !f32 {
     const array = kwargs.array;
     return switch (array.shape().len) {

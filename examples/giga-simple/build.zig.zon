@@ -1,0 +1,20 @@
+.{
+    .name = .giga_simple,
+    .version = "0.0.0",
+    .fingerprint = 0xbefd545a3d44176b,
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .znpy = .{
+            .url = "../../",
+            .hash = "znpy-0.0.1-sswLYlnAAAA7r5D7IgwET0riYH9Etv7i1XUsobWCVjgZ",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}

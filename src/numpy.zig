@@ -1,4 +1,4 @@
-const c = @import("znpy.zig").c;
+const c = @import("c.zig").c;
 
 pub const Error = error{
     TypeMismatch,
