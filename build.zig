@@ -71,19 +71,7 @@ fn newZNPY_impl(
     znpy.addOptions("znpy_options", znpy_options);
     znpy_options.addOption([:0]const u8, "pyd_name", name);
 
-    const gen_pyi_exe = b.addExecutable(.{
-        .name = b.fmt("gen-pyi-{s}", .{name}),
-        .root_source_file = pyi_zig_path,
-        .link_libc = true,
-        .target = target,
-        .optimize = optimize,
-        .strip = strip,
-    });
-    gen_pyi_exe.root_module.addImport("znpy", znpy);
-    gen_pyi_exe.root_module.addImport("extension_lib", shared_library.root_module);
-
-    const pyi_name = b.fmt("{s}.pyi", .{name});
-    const gen_pyi = b.addRunArtifact(gen_pyi_exe);
+    znpy.addIncludePath(b.path("src"));
 
     //- bs: decide what launcher to use
     const python_exe = if (target.result.os.tag == .windows) "py" else "python";
@@ -92,29 +80,59 @@ fn newZNPY_impl(
     const python_version_str = readCommandOutput(b, &[_][]const u8{ python_exe, "--version" }).?;
     const python_version = try parsePythonVersion(python_version_str);
     znpy_options.addOption(PythonVersion, "python_version", python_version);
+    if (python_version.major == 3 and python_version.minor <= 7)
+        znpy.linkSystemLibrary(b.fmt("python{d}.{d}m", .{ python_version.major, python_version.minor }), .{ .needed = true })
+    else
+        znpy.linkSystemLibrary(b.fmt("python{d}.{d}", .{ python_version.major, python_version.minor }), .{ .needed = true });
 
     //- bs: find python include path
     const python_include_path = readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }).?;
     znpy.addSystemIncludePath(.{ .cwd_relative = python_include_path });
 
     //- bs: find numpy include path, if available
-    var numpy_available = false;
+    var numpy_version: ?std.SemanticVersion = null;
     if (readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "import numpy as np; print(np.get_include())" })) |numpy_include_path| {
         znpy.addSystemIncludePath(.{ .cwd_relative = numpy_include_path });
-        numpy_available = true;
+        znpy.addCMacro("ZNPY_NUMPY_AVAILABLE", "1");
+        if (readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "import numpy as np; print(np.__version__)" })) |numpy_version_str| {
+            numpy_version = try parseNumpyVersion(numpy_version_str);
+            znpy_options.addOption(NumpyVersion, "numpy_version", numpy_version.?);
+        } else {
+            unreachable;
+        }
     }
-    znpy_options.addOption(bool, "numpy_available", numpy_available);
+    znpy_options.addOption(bool, "numpy_available", numpy_version != null);
 
     //- bs: link the necessary lib file on Windows
     if (target.result.os.tag == .windows) {
-        znpy.addLibraryPath(.{ .cwd_relative = readCommandOutput(b, &[_][]const u8{ "py", "-c", "from sysconfig import get_paths; print(get_paths()['data'] + '/libs')" }).? });
-        const python_library = b.fmt("python{d}{d}", .{
-            python_version.major,
-            python_version.minor,
-        });
-        znpy.linkSystemLibrary(python_library, .{});
+        znpy.addLibraryPath(.{ .cwd_relative = readCommandOutput(b, &[_][]const u8{
+            "py",
+            b.fmt("-{d}.{d}", .{ python_version.major, python_version.minor }),
+            "-c",
+            "import sysconfig; print(sysconfig.get_paths()['data'] + '\\libs')",
+        }).? });
+        const python_library_minor = b.fmt("python{d}{d}", .{ python_version.major, python_version.minor });
+        znpy.linkSystemLibrary(python_library_minor, .{});
+
+        if (numpy_version != null) {
+            znpy.addLibraryPath(.{ .cwd_relative = readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "import numpy as np; print(np.get_include().replace('\\include', '\\lib'))" }).? });
+            znpy.linkSystemLibrary("npymath", .{});
+        }
     }
 
+    const pyi_name = b.fmt("{s}.pyi", .{name});
+    const gen_pyi_exe = b.addExecutable(.{
+        .name = b.fmt("gen-pyi-{s}", .{name}),
+        .root_module = b.createModule(.{
+            .root_source_file = pyi_zig_path,
+            .target = target,
+            .optimize = optimize,
+            .strip = strip,
+        }),
+    });
+    gen_pyi_exe.root_module.addImport("znpy", znpy);
+    gen_pyi_exe.root_module.addImport("extension_lib", shared_library.root_module);
+    const gen_pyi = b.addRunArtifact(gen_pyi_exe);
     return .{
         znpy,
         b.addInstallFileWithDir(gen_pyi.captureStdOut(), .bin, pyi_name),
@@ -134,13 +152,16 @@ fn createTest(
     const zig_filename = b.fmt("{s}.zig", .{name});
     const py_filename = b.fmt("{s}.py", .{name});
 
-    const pyd = b.addSharedLibrary(.{
+    const pyd = b.addLibrary(.{
         .name = name,
-        .root_source_file = try b.path("tests").join(alloc, zig_filename),
-        .optimize = optimize,
-        .target = target,
-        .single_threaded = true,
-        .strip = strip,
+        .linkage = .dynamic,
+        .root_module = b.createModule(.{
+            .root_source_file = try b.path("tests").join(alloc, zig_filename),
+            .optimize = optimize,
+            .target = target,
+            .single_threaded = true,
+            .strip = strip,
+        }),
     });
 
     const znpy, const install_pyi_file = try newZNPY(b, pyd, target, optimize, strip);
@@ -199,10 +220,12 @@ fn createTests(
 
     // test
     const harness = b.addTest(.{
-        .root_source_file = b.path("tests/znpy_tests.zig"),
-        .target = target,
-        .optimize = optimize,
-        .single_threaded = true,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/znpy_tests.zig"),
+            .single_threaded = true,
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     const test_simple_install = try createTest(b, "test_simple", target, optimize, strip, tests_install_dir);
@@ -227,22 +250,18 @@ fn readCommandOutput(b: *std.Build, command: []const []const u8) ?[]const u8 {
     return std.mem.trimRight(u8, child.stdout, "\n\r\t ");
 }
 
-const PythonVersion = struct {
-    major: u16,
-    minor: u16,
-    // patch: u16,
-};
+const PythonVersion = std.SemanticVersion;
+const NumpyVersion = std.SemanticVersion;
 
 /// str = "Python 3.13.5"
 fn parsePythonVersion(str: []const u8) !PythonVersion {
     const prefix = "Python ";
     if (!(std.mem.startsWith(u8, str, prefix))) return error.PythonWTF;
-    var iter = std.mem.tokenizeScalar(u8, str[prefix.len..], '.');
-    return .{
-        .major = try std.fmt.parseInt(u8, iter.next() orelse "", 10), // empty string as default
-        .minor = try std.fmt.parseInt(u8, iter.next() orelse "", 10), // on purpose
-        // .patch = try std.fmt.parseInt(u8, iter.next() orelse "", 10), // so we can fail if it's not there
-    };
+    return try std.SemanticVersion.parse(str[prefix.len..]);
+}
+
+fn parseNumpyVersion(str: []const u8) !NumpyVersion {
+    return try std.SemanticVersion.parse(str);
 }
 
 pub fn build(

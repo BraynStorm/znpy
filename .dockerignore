@@ -1,5 +1,9 @@
+.git
+.jj
 .venv
 .vscode
 .zig-cache
+examples
 zig-out
 **/*.Dockerfile
+test_versions.sh

@@ -125,14 +125,12 @@ pub const array = struct {
                     i += @divExact(strides_[d], @sizeOf(DType)) * index[d];
                 }
 
-                // std.debug.print("shape = {any}\n", .{shape_});
-                // std.debug.print("strides = {any}\n", .{strides_});
                 const type_slice = data_[i .. i + shape_[shape_.len - 1]];
                 return type_slice;
             }
 
             fn n_dims(self: Typed) usize {
-                _ = self; // autofix
+                _ = self;
                 return NDims;
             }
         };
@@ -144,16 +142,5 @@ pub const array = struct {
         comptime dims: usize,
     ) !typed(T, dims) {
         return try typed(T, dims).init(self);
-    }
-
-    pub fn iter(self: Untyped, comptime ValueT: type, comptime NDims: usize) type {
-        _ = self; // autofix
-        _ = ValueT; // autofix
-        _ = NDims; // autofix
-        return struct {
-            const Iter = @This();
-
-            // pub fn next()
-        };
     }
 };

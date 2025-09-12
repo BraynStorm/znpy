@@ -15,9 +15,11 @@ fn pythonizeParamType(
         .int => try writer.writeAll(": int"),
         .float => try writer.writeAll(": float"),
         .@"struct" => {
-            const numpy = znpy.numpy;
+            if (znpy.options.numpy_available) {
+                const numpy = znpy.numpy;
 
-            if (param_type == numpy.array) {}
+                if (param_type == numpy.array) {}
+            }
         },
         .optional => |opt| {
             try writer.writeAll(": Optional[");
@@ -37,8 +39,6 @@ fn pythonizeParamType(
         },
         else => @compileLog(param_type),
     }
-    // if(param.default_value_ptr)
-
 }
 
 fn pythonizeReturnType(comptime return_type: type, out: anytype) !void {
@@ -63,10 +63,10 @@ fn pythonizeReturnType(comptime return_type: type, out: anytype) !void {
 /// for the extension module.
 ///
 pub fn main() !void {
-    const stdout = std.io.getStdOut();
-    try stdout.lock(.exclusive);
-
-    const out = stdout.writer();
+    var buffer: [64]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&buffer);
+    const out = &stdout_writer.interface;
+    defer out.flush() catch unreachable;
 
     // TODO: figure out a more granular way of importing these.
     try out.writeAll("from typing import Optional\n\n");

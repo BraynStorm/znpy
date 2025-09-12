@@ -9,11 +9,11 @@ const c = @import("c.zig").c;
 const PyAlloc = @This();
 
 fn rawAlloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
-    _ = ctx; // autofix
-    _ = alignment; // autofix
-    _ = ret_addr; // autofix
+    _ = ctx;
+    _ = ret_addr;
 
     // TODO: handle alignment
+    _ = alignment; // autofix
     const ptr = c.PyMem_Malloc(len);
 
     //- bs: case A - out of memory
@@ -21,25 +21,17 @@ fn rawAlloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr:
 }
 
 fn rawFree(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
-    _ = ctx; // autofix
-    _ = alignment; // autofix
-    _ = ret_addr; // autofix
+    _ = ctx;
+    _ = ret_addr;
+
     // TODO: handle alignment
+    _ = alignment; // autofix
     c.PyMem_Free(memory.ptr);
 }
-
-// fn rawResize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
-//     _ = ctx; // autofix
-//     _ = memory; // autofix
-//     _ = alignment; // autofix
-//     _ = new_len; // autofix
-//     _ = ret_addr; // autofix
-// }
-
 fn rawRemap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-    _ = ctx; // autofix
-    _ = alignment; // autofix
-    _ = ret_addr; // autofix
+    _ = ctx;
+    _ = alignment;
+    _ = ret_addr;
     return if (c.PyMem_Realloc(memory.ptr, new_len)) |ptr|
         @ptrCast(ptr)
     else

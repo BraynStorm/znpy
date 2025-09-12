@@ -2,7 +2,7 @@
     .name = .znpy,
     .version = "0.0.1",
     .fingerprint = 0x6169c9a0620bccb2,
-    .minimum_zig_version = "0.14.1",
+    .minimum_zig_version = "0.15.1",
     .dependencies = .{},
     .paths = .{
         "build.zig",

@@ -1,9 +1,30 @@
 {
     "cSpell.words": [
+        "arrayobject",
+        "bytearray",
+        "CDOUBLE",
+        "CFLOAT",
+        "CLONGDOUBLE",
+        "DECREF",
+        "dtypes",
         "INCREF",
+        "Malloc",
+        "memoryview",
         "ndarray",
+        "NOTYPE",
+        "npymath",
+        "NTYPES",
         "numpy",
+        "pymalloc",
+        "refcnt",
+        "ssize",
         "sysconfig",
+        "UBYTE",
+        "ULONGLONG",
+        "USERDEF",
+        "VARARGS",
+        "VSTRING",
+        "XDECREF",
         "znpy"
     ]
 }

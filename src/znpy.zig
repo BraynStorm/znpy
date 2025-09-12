@@ -1,5 +1,5 @@
 const std = @import("std");
-const options = @import("znpy_options");
+pub const options = @import("znpy_options");
 pub const c = @import("c.zig").c;
 
 pub const numpy = if (options.numpy_available)
@@ -7,13 +7,14 @@ pub const numpy = if (options.numpy_available)
 else
     @compileError("Numpy is not available");
 
+pub const List = @import("List.zig");
+pub const Function = @import("Function.zig");
+
 const PyObject_HEAD_INIT = 0;
 pub const PythonModule = struct {
     name: [:0]const u8,
     doc: [:0]const u8 = "",
 };
-
-pub const List = @import("List.zig");
 
 /// run a PyXX_Check(args) in a return-type-agnostic way.
 inline fn check(callable: anytype, args: anytype) bool {
@@ -108,7 +109,8 @@ fn makeMethodDef(
             args: ?*c.PyObject,
             kwargs: ?*c.PyObject,
         ) callconv(.c) ?*c.PyObject {
-            _ = self; // autofix
+            _ = self;
+
             const Func = @field(module, name);
 
             var args_struct: ArgsStruct = undefined;
@@ -176,20 +178,20 @@ fn makeMethodDef(
                     .error_union => maybe_error_result catch |e| {
                         if (@errorReturnTrace()) |stacktrace| {
                             const trace: *std.builtin.StackTrace = stacktrace;
-                            var array = std.ArrayListUnmanaged(u8).initCapacity(py_allocator, 4096) catch unreachable;
-                            defer array.deinit(py_allocator);
-                            const writer = array.writer(py_allocator);
+                            var allocating = std.Io.Writer.Allocating.init(py_allocator);
+                            defer allocating.deinit();
+                            const writer = &allocating.writer;
                             const debug_info = std.debug.getSelfDebugInfo() catch |err| {
                                 writer.print("\nUnable to print stack trace: Unable to open debug info: {s}\n", .{@errorName(err)}) catch unreachable;
                                 writer.writeByte(0) catch unreachable;
-                                return raise(c.PyExc_RuntimeError, @ptrCast(array.items));
+                                return raise(c.PyExc_RuntimeError, @ptrCast(writer.buffered()));
                             };
                             writer.writeAll("\n") catch unreachable;
                             std.debug.writeStackTrace(trace.*, writer, debug_info, .no_color) catch |err| {
                                 writer.print("Unable to print stack trace: {s}\n", .{@errorName(err)}) catch unreachable;
                             };
                             writer.writeByte(0) catch unreachable;
-                            _ = raise(c.PyExc_RuntimeError, @ptrCast(array.items));
+                            _ = raise(c.PyExc_RuntimeError, @ptrCast(writer.buffered()));
                         } else {
                             //- bs: no stacktrace, just return the error name.
                             _ = raise(c.PyExc_RuntimeError, @errorName(e));
@@ -287,21 +289,30 @@ fn makeModuleDef() c.PyModuleDef {
 }
 
 fn znpy_PyInit() callconv(.c) [*c]c.PyObject {
-    {
-        const stderr = std.io.getStdErr();
-        stderr.lock(.exclusive) catch unreachable;
-        defer stderr.unlock();
-        stderr.writer().print("`import " ++ options.pyd_name ++ "` built for Python {d}.{d}\n", .{
-            options.python_version.major,
-            options.python_version.minor,
-                // options.python_version.patch,
-        }) catch unreachable;
+    var buffer: [64]u8 = undefined;
+    const stderr = std.debug.lockStderrWriter(&buffer);
+    defer std.debug.unlockStderrWriter();
+
+    const extra = if (options.numpy_available)
+        std.fmt.comptimePrint(" (Numpy {d}.{d})", .{ options.numpy_version.major, options.numpy_version.minor })
+    else
+        "";
+
+    stderr.print("znpy: begin initialization of " ++ options.pyd_name ++ ", built for Python {d}.{d}" ++ extra ++ "\n", .{
+        options.python_version.major,
+        options.python_version.minor,
+            // options.python_version.patch,
+    }) catch unreachable;
+
+    if (!@hasDecl(@import("root"), "ZNPY_NO_PYINIT")) {
+        if (options.numpy_available) {
+            _ = c._import_array();
+        }
     }
 
-    if (options.numpy_available)
-        _ = c._import_array();
+    const module = c.PyModule_Create2(&module_def, c.PYTHON_API_VERSION);
+    stderr.print("znpy: initialized: {} \n", .{module != null}) catch unreachable;
 
-    const module = c.PyModule_Create(&module_def);
     return module;
 }
 

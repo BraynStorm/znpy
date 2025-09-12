@@ -3,6 +3,7 @@ const std = @import("std");
 const c = @import("c.zig").c;
 const List = @import("List.zig");
 const numpy = @import("numpy.zig");
+const options = @import("znpy_options");
 
 pub const ParseValueError = error{
     TypeMismatch,
@@ -82,35 +83,15 @@ pub fn pyObjectToValue(comptime T: type, py_value: ?*c.PyObject) ParseValueError
 
             switch (pp.size) {
                 .slice => {
-                    if (pp.is_const) {
-                        //- bs: view to bytes, bytearray or memoryview
-                        if (check(c.PyBytes_Check, .{py_value})) {
-                            const data: [*c]const u8 = c.PyBytes_AS_STRING(py_value);
-                            const data_len: isize = c.PyBytes_GET_SIZE(py_value);
-                            return data[0..@intCast(data_len)];
-                        } else if (check(c.PyByteArray_Check, .{py_value})) {
-                            const data: [*c]const u8 = c.PyByteArray_AS_STRING(py_value);
-                            const data_len: isize = c.PyByteArray_GET_SIZE(py_value);
-                            return data[0..@intCast(data_len)];
-                        } else if (check(c.PyMemoryView_Check, .{py_value})) {
-                            // TODO:
-                            //  Add conversion to bytes if the object supports
-                            //  the buffer protocol (memoryview, etc)
-                            return error.NotImplemented_MemoryView;
-                        }
-                        return null;
-                    } else {
-                        //- bs: pointer to bytearray
-                        if (check(c.PyByteArray_Check, .{py_value})) {
-                            const data: [*c]u8 = c.PyByteArray_AS_STRING(py_value);
-                            const data_len: isize = c.PyByteArray_GET_SIZE(py_value);
-                            return data[0..@intCast(data_len)];
-                        } else if (check(c.PyMemoryView_Check, .{py_value})) {
-                            // TODO: Implement.
-                            return error.NotImplemented_MemoryView;
-                        }
-                        return error.TypeMismatch;
+                    //- bs: view to bytes, bytearray or memoryview
+                    if (pyTypeMatch(py_value, &c.PyBytes_Type)) {
+                        return try pyBytesSlice(c.PyBytesObject, pp.is_const, py_value);
+                    } else if (pyTypeMatch(py_value, &c.PyByteArray_Type)) {
+                        return try pyBytesSlice(c.PyByteArrayObject, pp.is_const, py_value);
+                    } else if (pyTypeMatch(py_value, &c.PyMemoryView_Type)) {
+                        return try pyBytesSlice(c.PyMemoryViewObject, pp.is_const, py_value);
                     }
+                    return null;
                 },
                 else => {
                     @compileLog(T);
@@ -137,4 +118,48 @@ pub fn valueToPyObject(result: anytype) *c.PyObject {
             @compileError("");
         },
     };
+}
+
+fn pyTypeMatch(object: [*c]c.PyObject, typeobject: [*c]c.PyTypeObject) bool {
+    return object.*.ob_type == typeobject or
+        c.PyType_IsSubtype(object.*.ob_type, typeobject) != 0;
+}
+
+fn canUseMacros() bool {
+    return options.python_version.major >= 3 and
+        options.python_version.minor >= 11;
+}
+
+fn pyBytesSlice(
+    comptime T: type,
+    comptime is_const: bool,
+    py_object: [*c]c.PyObject,
+) !(if (is_const) []const u8 else []u8) {
+    const can_use_macros = comptime canUseMacros();
+
+    switch (T) {
+        c.PyBytesObject => {
+            if (!is_const)
+                return error.TypeMismatch;
+
+            const py_bytes: [*c]c.PyBytesObject = @ptrCast(py_object);
+            const data: [*c]u8 = if (can_use_macros) c.PyBytes_AS_STRING(py_object) else &py_bytes.*.ob_sval;
+            const size: isize = if (can_use_macros) c.PyBytes_GET_SIZE(py_object) else py_bytes.*.ob_base.ob_size;
+
+            return data[0..@intCast(size)];
+        },
+        c.PyMemoryViewObject => {
+            // TODO:
+            //  Add conversion to bytes if the object supports
+            //  the buffer protocol (memoryview, etc)
+            return error.NotImplemented_MemoryView;
+        },
+        c.PyByteArrayObject => {
+            const py_byte_array: [*c]c.PyByteArrayObject = @ptrCast(py_object);
+            const data: [*c]u8 = if (can_use_macros) c.PyByteArray_AS_STRING(py_object) else py_byte_array.*.ob_start;
+            const size: isize = if (can_use_macros) c.PyByteArray_GET_SIZE(py_object) else py_byte_array.*.ob_base.ob_size;
+            return data[0..@intCast(size)];
+        },
+        else => unreachable,
+    }
 }

@@ -43,7 +43,7 @@ printAssert(test.divide_f32, 4.0, (20.0, 5))
 printAssert(test.divide_f32, 2000.0, (1000, 0.5))
 printAssert(test.divide_f32, 4.0, (20, 5))
 
-# check for optional support
+# # check for optional support
 printAssert(test.optional_usize, None, (True,))
 printAssert(test.optional_usize, None, ([1, 2],))
 printAssert(test.optional_usize, 1, ([],))
