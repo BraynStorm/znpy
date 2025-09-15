@@ -100,3 +100,6 @@ def benchmark_sort():
 
 # Enable manually if you want to see the performance :D
 # benchmark_sort()
+
+# check return type - string
+printAssert(test.repeat_string, "5555555", (7,))

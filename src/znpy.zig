@@ -8,6 +8,7 @@ else
     @compileError("Numpy is not available");
 
 pub const List = @import("List.zig");
+pub const String = @import("String.zig");
 pub const Function = @import("Function.zig");
 
 const PyObject_HEAD_INIT = 0;
@@ -327,4 +328,3 @@ pub const py_allocator = @import("pymalloc.zig").allocator();
 pub fn pyLessThan(lhs: PyObject, rhs: PyObject) bool {
     return c.PyObject_RichCompareBool(lhs, rhs, c.Py_LT) != 0;
 }
-

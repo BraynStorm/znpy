@@ -88,3 +88,11 @@ pub fn heap_sort_any(args: struct { list: znpy.List }) void {
         }
     }.lessThan);
 }
+
+pub fn repeat_string(args: struct { count: u32 }) !znpy.String {
+    var buffer: [128]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+    _ = writer.splatByte('5', args.count) catch unreachable;
+    writer.flush() catch unreachable;
+    return .fromBuffer(writer.buffered());
+}

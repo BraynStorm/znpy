@@ -4,6 +4,7 @@ const c = @import("c.zig").c;
 const List = @import("List.zig");
 const numpy = @import("numpy.zig");
 const options = @import("znpy_options");
+const znpy = @import("znpy.zig");
 
 pub const ParseValueError = error{
     TypeMismatch,
@@ -104,8 +105,8 @@ pub fn pyObjectToValue(comptime T: type, py_value: ?*c.PyObject) ParseValueError
 }
 
 pub fn valueToPyObject(result: anytype) *c.PyObject {
-    const result_t = @TypeOf(result);
-    return switch (@typeInfo(result_t)) {
+    const ResultT = @TypeOf(result);
+    return switch (@typeInfo(ResultT)) {
         .int => |int_t| switch (int_t.signedness) {
             .signed => c.PyLong_FromLongLong(@intCast(result)),
             .unsigned => c.PyLong_FromUnsignedLongLong(@intCast(result)),
@@ -113,6 +114,13 @@ pub fn valueToPyObject(result: anytype) *c.PyObject {
         .float => c.PyFloat_FromDouble(result),
         .optional => if (result) |real_result| valueToPyObject(real_result) else c.Py_None(),
         .void => c.Py_None(),
+        .@"struct" => switch (ResultT) {
+            znpy.String => result.py_object,
+            else => {
+                @compileLog("Unsupported return type (yet!)", result);
+                @compileError("");
+            },
+        },
         else => {
             @compileLog("Unsupported return type (yet!)", result);
             @compileError("");

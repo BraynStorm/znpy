@@ -50,8 +50,8 @@ fn pythonizeParamType(
     }
 }
 
-fn pythonizeReturnType(comptime return_type: type, writer: *std.Io.Writer) !void {
-    switch (@typeInfo(return_type)) {
+fn pythonizeReturnType(comptime ReturnT: type, writer: *std.Io.Writer) !void {
+    switch (@typeInfo(ReturnT)) {
         .int => try writer.writeAll("int"),
         .float => try writer.writeAll("float"),
         .bool => try writer.writeAll("bool"),
@@ -64,8 +64,20 @@ fn pythonizeReturnType(comptime return_type: type, writer: *std.Io.Writer) !void
                 try writer.writeAll("]");
         },
         .void => try writer.writeAll("None"),
+        .error_union => |eu| {
+            pythonizeReturnType(eu.payload, writer);
+        },
+        .@"struct" => {
+            switch (ReturnT) {
+                znpy.String => try writer.writeAll("str"),
+                else => {
+                    @compileLog(ReturnT);
+                    @compileError("pyi - unsupported return type");
+                },
+            }
+        },
         else => {
-            @compileLog(return_type);
+            @compileLog(ReturnT);
             @compileError("pyi - unsupported return type");
         },
     }
