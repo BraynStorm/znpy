@@ -327,3 +327,4 @@ pub const py_allocator = @import("pymalloc.zig").allocator();
 pub fn pyLessThan(lhs: PyObject, rhs: PyObject) bool {
     return c.PyObject_RichCompareBool(lhs, rhs, c.Py_LT) != 0;
 }
+
