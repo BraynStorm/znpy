@@ -40,10 +40,12 @@ pub fn divide_f32_default_1(
         - auto-conversion from `number`-like things
     - single/double precision floats - f32, f64
         - auto-conversion from `number`-like things
+    - 'str' (immutable)
     - 'bytes' (immutable)
     - 'bytearray' (mutable)
     - 'numpy.ndarray' (mutable)
     - 'list' (mutable)
+    - 'dict' (mutable)
 
 - Supported return types:
     - void
@@ -58,8 +60,6 @@ pub fn divide_f32_default_1(
 ## Not supported yet (WIP)
 
 - Arguments:
-    - 'str' objects - workaround: .encode('utf-8') on the Python side
-    - 'dict' objects
     - 'iterable'
     - 'memoryview' (mutable/immutable)
     - 'file-descriptor' (file, socket, etc.)
