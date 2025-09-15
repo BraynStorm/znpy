@@ -80,10 +80,15 @@ fn newZNPY_impl(
     const python_version_str = readCommandOutput(b, &[_][]const u8{ python_exe, "--version" }).?;
     const python_version = try parsePythonVersion(python_version_str);
     znpy_options.addOption(PythonVersion, "python_version", python_version);
-    if (python_version.major == 3 and python_version.minor <= 7)
-        znpy.linkSystemLibrary(b.fmt("python{d}.{d}m", .{ python_version.major, python_version.minor }), .{ .needed = true })
-    else
+    if (target.result.os.tag == .windows) {
+        znpy.linkSystemLibrary(b.fmt("python{d}{d}", .{ python_version.major, python_version.minor }), .{ .needed = true });
+    } else {
+        if (python_version.major == 3 and python_version.minor <= 7) {
+        znpy.linkSystemLibrary(b.fmt("python{d}.{d}m", .{ python_version.major, python_version.minor }), .{ .needed = true });
+        } else {
         znpy.linkSystemLibrary(b.fmt("python{d}.{d}", .{ python_version.major, python_version.minor }), .{ .needed = true });
+}
+    }
 
     //- bs: find python include path
     const python_include_path = readCommandOutput(b, &[_][]const u8{ python_exe, "-c", "from sysconfig import get_paths; print(get_paths()['include'])" }).?;
