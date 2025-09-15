@@ -103,3 +103,12 @@ def benchmark_sort():
 
 # check return type - string
 printAssert(test.repeat_string, "5555555", (7,))
+
+import sys
+
+dict_data = {1: 16, 2: 32, 3: 7, 4: 1000}
+# check input - dict
+print(sys.getrefcount(dict_data))
+printAssert(test.dict_concat_keys, "1,2,3,4", (dict_data,))
+printAssert(test.dict_sum_values, 16 + 32 + 7 + 1000, (dict_data,))
+print(sys.getrefcount(dict_data))

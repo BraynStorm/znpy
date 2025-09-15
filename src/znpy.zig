@@ -33,7 +33,7 @@ fn raise(exception: [*c]c.PyObject, message: [:0]const u8) [*c]c.PyObject {
     return null;
 }
 
-const convert = @import("convert.zig");
+pub const convert = @import("convert.zig");
 const ParseValueError = convert.ParseValueError;
 const pyObjectToValue = convert.pyObjectToValue;
 const pythonizeReturnValue = convert.valueToPyObject;
@@ -328,3 +328,46 @@ pub const py_allocator = @import("pymalloc.zig").allocator();
 pub fn pyLessThan(lhs: PyObject, rhs: PyObject) bool {
     return c.PyObject_RichCompareBool(lhs, rhs, c.Py_LT) != 0;
 }
+
+pub const Dict = struct {
+    py_object: *c.PyObject,
+
+    fn pyDict(self: @This()) *c.PyDictObject {
+        return @ptrCast(self.py_object);
+    }
+
+    pub fn keys(self: @This()) List {
+        const key_list = c.PyDict_Keys(self.py_object);
+        return List{ .py_object = key_list };
+    }
+
+    pub fn values(self: @This()) List {
+        const key_list = c.PyDict_Values(self.py_object);
+        return List{ .py_object = key_list };
+    }
+
+    pub fn items(self: @This()) List {
+        const item_list = c.PyDict_Items(self.py_object);
+        return List{ .py_object = item_list };
+    }
+
+    pub fn len(self: @This()) usize {
+        return c.PyDict_Size(self.py_object);
+    }
+
+    pub fn contains(self: @This(), key: *c.PyObject) bool {
+        return c.PyDict_Contains(self.py_object, key) == 1;
+    }
+
+    pub fn get(self: @This(), key: *c.PyObject) ?*c.PyObject {
+        return c.PyDict_GetItem(self.py_object, key);
+    }
+    pub fn set(self: @This(), key: *c.PyObject, value: *c.PyObject) void {
+        c.PyDict_SetItem(self.py_object, key, value);
+    }
+
+    /// Remove item from the dictionary if present. Returns true if present else false.
+    pub fn remove(self: @This(), key: *c.PyObject) bool {
+        return c.PyDict_DelItem(self.py_object, key) == 0;
+    }
+};

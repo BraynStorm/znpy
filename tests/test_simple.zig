@@ -96,3 +96,42 @@ pub fn repeat_string(args: struct { count: u32 }) !znpy.String {
     writer.flush() catch unreachable;
     return .fromBuffer(writer.buffered());
 }
+
+pub fn dict_concat_keys(args: struct { data: znpy.Dict }) !znpy.String {
+    const key_list = args.data.keys();
+    defer key_list.deinit();
+
+    var buffer: [128]u8 = undefined;
+    var writer = std.Io.Writer.fixed(&buffer);
+
+    for (key_list.sliceOfAny()) |anything| {
+        if (try znpy.convert.pyObjectToValue(u32, anything)) |number| {
+            try writer.print("{d}", .{number});
+        } else if (try znpy.convert.pyObjectToValue([]const u8, anything)) |string| {
+            try writer.writeAll(string);
+        } else {
+            return error.UnknownType;
+        }
+        try writer.writeByte(',');
+    }
+
+    if (writer.buffered().len > 0)
+        writer.undo(1);
+
+    writer.flush() catch unreachable;
+    return .fromBuffer(writer.buffered());
+}
+pub fn dict_sum_values(args: struct { data: znpy.Dict }) !usize {
+    const value_list = args.data.values();
+    defer value_list.deinit();
+
+    var sum: usize = 0;
+    for (value_list.sliceOfAny()) |anything| {
+        if (try znpy.convert.pyObjectToValue(usize, anything)) |number| {
+            sum += number;
+        } else {
+            return error.UnknownType;
+        }
+    }
+    return sum;
+}

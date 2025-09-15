@@ -59,20 +59,29 @@ pub fn pyObjectToValue(comptime T: type, py_value: ?*c.PyObject) ParseValueError
             };
         },
         .@"struct" => {
-            if (T == List) {
-                if (check(c.PyList_Check, .{py_value})) {
-                    return .{ .object = @ptrCast(py_value) };
-                }
-                return error.NotImplemented_Unknown;
-            } else if (T == numpy.array) {
-                if (std.meta.eql(
-                    @as(usize, @intFromPtr(@as([*c]?*c.PyTypeObject, @ptrCast(c.PyArray_API))[2])),
-                    @as(usize, @intFromPtr(py_value.?.ob_type)),
-                )) {
-                    return numpy.array{ .ndarray = @as(*c.PyArrayObject, @ptrCast(py_value)) };
-                } else {
-                    return error.TypeMismatch;
-                }
+            switch (T) {
+                List => {
+                    if (check(c.PyList_Check, .{py_value})) {
+                        return .{ .py_object = @ptrCast(py_value) };
+                    }
+                    return error.NotImplemented_Unknown;
+                },
+                znpy.Dict => {
+                    if (check(c.PyDict_Check, .{py_value})) {
+                        return .{ .py_object = @ptrCast(py_value) };
+                    }
+                    return error.NotImplemented_Unknown;
+                },
+                else => if (T == numpy.array) {
+                    if (std.meta.eql(
+                        @as(usize, @intFromPtr(@as([*c]?*c.PyTypeObject, @ptrCast(c.PyArray_API))[2])),
+                        @as(usize, @intFromPtr(py_value.?.ob_type)),
+                    )) {
+                        return numpy.array{ .ndarray = @as(*c.PyArrayObject, @ptrCast(py_value)) };
+                    } else {
+                        return error.TypeMismatch;
+                    }
+                },
             }
             return error.NotImplemented_Struct;
         },
@@ -84,8 +93,10 @@ pub fn pyObjectToValue(comptime T: type, py_value: ?*c.PyObject) ParseValueError
 
             switch (pp.size) {
                 .slice => {
-                    //- bs: view to bytes, bytearray or memoryview
-                    if (pyTypeMatch(py_value, &c.PyBytes_Type)) {
+                    //- bs: view to str, bytes, bytearray or memoryview
+                    if (pyTypeMatch(py_value, &c.PyUnicode_Type)) {
+                        return try pyBytesSlice(znpy.String, pp.is_const, py_value);
+                    } else if (pyTypeMatch(py_value, &c.PyBytes_Type)) {
                         return try pyBytesSlice(c.PyBytesObject, pp.is_const, py_value);
                     } else if (pyTypeMatch(py_value, &c.PyByteArray_Type)) {
                         return try pyBytesSlice(c.PyByteArrayObject, pp.is_const, py_value);
@@ -138,6 +149,8 @@ fn canUseMacros() bool {
         options.python_version.minor >= 11;
 }
 
+extern fn PyUnicode_AsUTF8AndSize(unicode: [*c]c.PyObject, size: [*c]c.Py_ssize_t) callconv(.c) [*c]const u8;
+
 fn pyBytesSlice(
     comptime T: type,
     comptime is_const: bool,
@@ -146,12 +159,22 @@ fn pyBytesSlice(
     const can_use_macros = comptime canUseMacros();
 
     switch (T) {
+        znpy.String => {
+            if (!is_const)
+                return error.TypeMismatch;
+
+            // if (can_use_macros) {
+            var size: isize = undefined;
+            var data: [*c]const u8 = PyUnicode_AsUTF8AndSize(py_object, &size);
+            return data[0..@intCast(size)];
+            // }
+        },
         c.PyBytesObject => {
             if (!is_const)
                 return error.TypeMismatch;
 
             const py_bytes: [*c]c.PyBytesObject = @ptrCast(py_object);
-            const data: [*c]u8 = if (can_use_macros) c.PyBytes_AS_STRING(py_object) else &py_bytes.*.ob_sval;
+            const data: [*c]const u8 = if (can_use_macros) c.PyBytes_AS_STRING(py_object) else &py_bytes.*.ob_sval;
             const size: isize = if (can_use_macros) c.PyBytes_GET_SIZE(py_object) else py_bytes.*.ob_base.ob_size;
 
             return data[0..@intCast(size)];
