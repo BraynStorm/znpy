@@ -60,3 +60,6 @@ test "znpy.simple" {
 test "znpy.numpy" {
     try py_test("test_numpy.py");
 }
+test "znpy.callbacks" {
+    try py_test("test_callbacks.py");
+}

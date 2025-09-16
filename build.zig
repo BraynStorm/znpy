@@ -84,10 +84,10 @@ fn newZNPY_impl(
         znpy.linkSystemLibrary(b.fmt("python{d}{d}", .{ python_version.major, python_version.minor }), .{ .needed = true });
     } else {
         if (python_version.major == 3 and python_version.minor <= 7) {
-        znpy.linkSystemLibrary(b.fmt("python{d}.{d}m", .{ python_version.major, python_version.minor }), .{ .needed = true });
+            znpy.linkSystemLibrary(b.fmt("python{d}.{d}m", .{ python_version.major, python_version.minor }), .{ .needed = true });
         } else {
-        znpy.linkSystemLibrary(b.fmt("python{d}.{d}", .{ python_version.major, python_version.minor }), .{ .needed = true });
-}
+            znpy.linkSystemLibrary(b.fmt("python{d}.{d}", .{ python_version.major, python_version.minor }), .{ .needed = true });
+        }
     }
 
     //- bs: find python include path
@@ -235,10 +235,12 @@ fn createTests(
 
     const test_simple_install = try createTest(b, "test_simple", target, optimize, strip, tests_install_dir);
     const test_numpy_install = try createTest(b, "test_numpy", target, optimize, strip, tests_install_dir);
+    const test_callbacks_install = try createTest(b, "test_callbacks", target, optimize, strip, tests_install_dir);
 
     const harness_run = b.addRunArtifact(harness);
     harness_run.step.dependOn(test_simple_install);
     harness_run.step.dependOn(test_numpy_install);
+    harness_run.step.dependOn(test_callbacks_install);
 
     const harness_cmd = b.step("test", "Test ZNPY");
     harness_cmd.dependOn(&harness_run.step);

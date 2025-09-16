@@ -72,6 +72,12 @@ pub fn pyObjectToValue(comptime T: type, py_value: ?*c.PyObject) ParseValueError
                     }
                     return error.NotImplemented_Unknown;
                 },
+                znpy.Function => {
+                    if (check(c.PyCallable_Check, .{py_value})) {
+                        return .{ .py_object = @ptrCast(py_value) };
+                    }
+                    return error.NotImplemented_Unknown;
+                },
                 else => if (T == numpy.array) {
                     if (std.meta.eql(
                         @as(usize, @intFromPtr(@as([*c]?*c.PyTypeObject, @ptrCast(c.PyArray_API))[2])),
